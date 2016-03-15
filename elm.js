@@ -7507,11 +7507,19 @@ Elm.Main.make = function (_elm) {
       A2($Basics._op["++"],"} ",A2($Basics._op["++"],"bullets: ",$Basics.toString(p.bullets)))))))))))))))));
    };
    var viewPlayer = F2(function (s,c) {
-      return A2($Graphics$Collage.rotate,
-      s.dir,
-      A2($Graphics$Collage.move,
-      {ctor: "_Tuple2",_0: s.body.pos.x,_1: s.body.pos.y},
-      A2($Graphics$Collage.filled,c,A2($Graphics$Collage.oval,2 * s.body.radius,s.body.radius))));
+      var shape = _U.list([A2($Graphics$Collage.outlined,
+                          _U.update($Graphics$Collage.defaultLine,{color: whiteC}),
+                          A2($Graphics$Collage.oval,3 * s.body.radius,1.5 * s.body.radius))
+                          ,A2($Graphics$Collage.outlined,
+                          _U.update($Graphics$Collage.defaultLine,{color: whiteC}),
+                          A2($Graphics$Collage.ngon,3,1.5 * s.body.radius))
+                          ,A2($Graphics$Collage.filled,c,A2($Graphics$Collage.ngon,3,1.5 * s.body.radius))
+                          ,A2($Graphics$Collage.filled,c,A2($Graphics$Collage.oval,3 * s.body.radius,1.5 * s.body.radius))]);
+      var exhaust = A2($Graphics$Collage.move,
+      {ctor: "_Tuple2",_0: -3 * s.body.radius,_1: 0},
+      A2($Graphics$Collage.filled,A3($Color.rgb,255,255,0),A2($Graphics$Collage.oval,2 * s.body.radius,0.5 * s.body.radius)));
+      var $final = s.thrust ? A2($List._op["::"],exhaust,shape) : shape;
+      return A2($Graphics$Collage.rotate,s.dir,A2($Graphics$Collage.move,{ctor: "_Tuple2",_0: s.body.pos.x,_1: s.body.pos.y},$Graphics$Collage.group($final)));
    });
    var gravity = F2(function (m0,m1) {
       var dir = $Vec.normalize({x: m1.pos.x - m0.pos.x,y: m1.pos.y - m0.pos.y});
@@ -7527,7 +7535,11 @@ Elm.Main.make = function (_elm) {
       return _U.update(b,{pos: p$,vel: v$,acc: acc});
    });
    var fire = F2(function (c,p) {
-      return {pos: p.body.pos,vel: A2($Vec.scale,100,A2($Vec.rotateV,p.dir,$Vec.iV)),acc: $Vec.zeroV,mass: c.bulletMass,radius: c.bulletRadius};
+      return {pos: p.body.pos
+             ,vel: A2($Vec.scale,2 * A2($Basics.max,10,$Vec.magnitude(p.body.vel)),A2($Vec.rotateV,p.dir,$Vec.iV))
+             ,acc: $Vec.zeroV
+             ,mass: c.bulletMass
+             ,radius: c.bulletRadius};
    });
    var intersects = F2(function (b0,b1) {
       return _U.cmp(Math.pow(b0.pos.x - b1.pos.x,2) + Math.pow(b0.pos.y - b1.pos.y,2),Math.pow(b0.radius + b1.radius,2)) < 0;
@@ -7613,7 +7625,7 @@ Elm.Main.make = function (_elm) {
    var brMB = $Signal.mailbox(defaultConfig.bulletRadius);
    var brInp = A2($Graphics$Input.dropDown,
    $Signal.message(brMB.address),
-   A2($List.map,function (x) {    return {ctor: "_Tuple2",_0: $Basics.toString(x),_1: x};},A3(frange,0,10,0.5)));
+   A2($List.map,function (x) {    return {ctor: "_Tuple2",_0: $Basics.toString(x),_1: x};},A3(frange,0,50,1)));
    var mbMB = $Signal.mailbox(defaultConfig.maxBullets);
    var mbInp = A2($Graphics$Input.dropDown,
    $Signal.message(mbMB.address),
@@ -7685,7 +7697,7 @@ Elm.Main.make = function (_elm) {
    var Player = F5(function (a,b,c,d,e) {    return {body: a,dir: b,thrust: c,life: d,bullets: e};});
    var BoundingBox = F4(function (a,b,c,d) {    return {x: a,y: b,w: c,h: d};});
    var Body = F5(function (a,b,c,d,e) {    return {pos: a,vel: b,acc: c,mass: d,radius: e};});
-   var p1Color = A3($Color.rgb,0,0,250);
+   var p1Color = A3($Color.rgb,0,250,0);
    var p0Color = A3($Color.rgb,250,0,0);
    var viewGame = F3(function (w,h,g) {
       return A4($Graphics$Element.container,

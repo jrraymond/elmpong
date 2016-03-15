@@ -20,7 +20,7 @@ p0Color : Color.Color
 p0Color = rgb 250 0 0
 
 p1Color : Color.Color
-p1Color = rgb 0 0 250
+p1Color = rgb 0 250 0
 
 
 type alias Body = {pos : Vec, vel : Vec, acc : Vec, mass : Float, radius : Float}
@@ -166,7 +166,7 @@ calcHits =
 fire : Config -> Player -> Bullet
 fire c p =
   { pos = p.body.pos
-  , vel = (Vec.scale 100 (rotateV p.dir iV))
+  , vel = (Vec.scale (2*max 10 (Vec.magnitude p.body.vel)) (rotateV p.dir iV))
   , acc = zeroV
   , mass = c.bulletMass
   , radius = c.bulletRadius}
@@ -222,10 +222,17 @@ gravity m0 m1 =
 ------------------------------ VIEW ------------------------------
 viewPlayer : Player -> Color.Color -> Form
 viewPlayer s c =
-  oval (2*s.body.radius) s.body.radius
-    |> filled c
-    |> move (s.body.pos.x, s.body.pos.y)
-    |> rotate s.dir
+  let
+    exhaust = oval (2*s.body.radius) (0.5*s.body.radius) |> filled (rgb 255 255 0) |> move (-3*s.body.radius, 0)
+    shape = [ oval (3*s.body.radius) (1.5*s.body.radius) |> outlined {defaultLine | color = whiteC}
+            , ngon 3 (1.5*s.body.radius) |> outlined {defaultLine | color = whiteC}
+            , ngon 3 (1.5*s.body.radius) |> filled c
+            , oval (3*s.body.radius) (1.5*s.body.radius) |> filled c]
+    final = if s.thrust
+               then exhaust :: shape
+               else shape
+  in
+     group final |> move (s.body.pos.x, s.body.pos.y) |> rotate s.dir
 
 playerInfo : Player -> String
 playerInfo p =
@@ -366,7 +373,7 @@ brMB = Signal.mailbox defaultConfig.bulletRadius
 brInp : Element
 brInp = 
   dropDown (Signal.message brMB.address)
-   (List.map (\x -> (toString x, x)) (frange 0 10 0.5))
+   (List.map (\x -> (toString x, x)) (frange 0 50 1))
 
 mbMB : Signal.Mailbox Int
 mbMB = Signal.mailbox defaultConfig.maxBullets
