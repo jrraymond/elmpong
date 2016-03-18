@@ -12,16 +12,14 @@ import Window
 import Vec exposing (..)
 
 
-rotationSensitivity : Float
-rotationSensitivity = 0.1
-
-
 p0Color : Color.Color
 p0Color = rgb 250 0 0
 
 p1Color : Color.Color
 p1Color = rgb 0 250 0
 
+bulletVel : Float
+bulletVel = 250
 
 type alias Body = {pos : Vec, vel : Vec, acc : Vec, mass : Float, radius : Float}
 
@@ -42,7 +40,8 @@ type alias Config =
   , enginePower : Float
   , bulletRadius : Float
   , bulletMass : Float
-  , maxBullets : Int}
+  , maxBullets : Int
+  , collisionElasticity : Float}
 
 
 type alias Bullet = Body
@@ -94,10 +93,11 @@ defaultControl =
 defaultConfig : Config
 defaultConfig =
   { rotationSensitivity = 0.1
-  , enginePower = 1
-  , bulletRadius = 1
+  , enginePower = 10
+  , bulletRadius = 10
   , bulletMass = 1
-  , maxBullets = 100}
+  , maxBullets = 100
+  , collisionElasticity = 0.5}
 
 
 updatePlayer : Config -> BoundingBox -> List Body -> Float -> Float -> Float -> Bool -> Player -> Player
@@ -108,22 +108,22 @@ updatePlayer c boundary bodys dt rot thrust fire p =
     engine = rotateV dir' (Vec.scale (c.enginePower*thrust) {x = 1, y = 0})
     gravs = List.map (\b -> gravity p.body b) bodys
     b' = updateBody dt (engine::gravs) p.body
-    nextbdy = bounds boundary p.body (collision bodys p.body b')
+    nextbdy = bounds c.collisionElasticity boundary p.body (collision c.collisionElasticity bodys p.body b')
     bs' = if fire && p.bullets > 0 then p.bullets - 1 else p.bullets
   in
     {p | body = nextbdy, dir = dir', thrust = thrust /= 0, bullets = bs'}
 
-bounds : BoundingBox -> Body -> Body -> Body
-bounds box old nu =
+bounds : Float -> BoundingBox -> Body -> Body -> Body
+bounds elasticity box old nu =
   if nu.pos.x < box.x || nu.pos.x > box.x + box.w
-    then {nu | pos = old.pos, vel = {x = negate nu.vel.x, y = nu.vel.y}} --left or right
+    then {nu | pos = old.pos, vel = Vec.scale elasticity {x = negate nu.vel.x, y = nu.vel.y}} --left or right
     else if nu.pos.y < box.y || nu.pos.y > box.y + box.h
-           then {nu | pos = old.pos, vel = {x = nu.vel.x, y = negate nu.vel.y}} --above or below
+           then {nu | pos = old.pos, vel = Vec.scale elasticity {x = nu.vel.x, y = negate nu.vel.y}} --above or below
            else nu
   
 
-collision : List Body -> Body -> Body -> Body
-collision bodys old nu = 
+collision : Float -> List Body -> Body -> Body -> Body
+collision elasticity bodys old nu = 
   case bodys of
     [] -> nu
     (b::bs) ->
@@ -133,17 +133,17 @@ collision bodys old nu =
             n = Vec.normalize (sub b.pos old.pos) --normal
             u = Vec.scale (Vec.dot nu.vel n) n --orthogonal to tangent
             w = Vec.sub nu.vel u --parallel to tangent
-            v' = Vec.sub w u --perfectly elastic, frictionless collision
+            v' = Vec.scale elasticity (Vec.sub w u)
           in 
             {old | vel = v'}
-        else collision bs old nu
+        else collision elasticity bs old nu
 
-updateBullet : BoundingBox -> List Body -> Float -> Bullet -> Bullet
-updateBullet boundary bodys dt bullet =
+updateBullet : Float -> BoundingBox -> List Body -> Float -> Bullet -> Bullet
+updateBullet elasticity boundary bodys dt bullet =
   let
     gravs = List.map (gravity bullet) bodys
   in
-    bounds boundary bullet (updateBody dt gravs bullet)
+    bounds elasticity boundary bullet (collision elasticity bodys bullet (updateBody dt gravs bullet))
 
 intersects : Body -> Body -> Bool
 intersects b0 b1 = (b0.pos.x - b1.pos.x)^2 + (b0.pos.y - b1.pos.y)^2 < (b0.radius + b1.radius)^2
@@ -166,7 +166,7 @@ calcHits =
 fire : Config -> Player -> Bullet
 fire c p =
   { pos = p.body.pos
-  , vel = (Vec.scale (2*max 10 (Vec.magnitude p.body.vel)) (rotateV p.dir iV))
+  , vel = (Vec.scale bulletVel (rotateV p.dir iV))
   , acc = zeroV
   , mass = c.bulletMass
   , radius = c.bulletRadius}
@@ -190,8 +190,8 @@ update (w, h, c, inp) game =
              bullets1' = if inp.player1.fire && game.player1.bullets > 0
                             then fire c game.player1 :: game.bullets1
                             else game.bullets1
-             (uBs1', up0') = calcHits p0' (List.map (updateBullet boundary' pbs inp.dt) bullets1')
-             (uBs0', up1') = calcHits p1' (List.map (updateBullet boundary' pbs inp.dt) bullets0')
+             (uBs1', up0') = calcHits p0' (List.map (updateBullet c.collisionElasticity boundary' pbs inp.dt) bullets1')
+             (uBs0', up1') = calcHits p1' (List.map (updateBullet c.collisionElasticity boundary' pbs inp.dt) bullets0')
            in
             { game | paused = False
             , boundary = boundary'
@@ -292,7 +292,9 @@ viewConfig = flow right [ toTxt "Engine Power"
                         , toTxt "Bullet Radius"
                         , brInp
                         , toTxt "Max Bullets"
-                        , mbInp]
+                        , mbInp
+                        , toTxt "Collision Elasticity"
+                        , elasticityInp]
 
 view : (Int, Int) -> Game -> Element --Config -> Element
 view (w, h) g = -- c =
@@ -365,7 +367,7 @@ rsMB = Signal.mailbox defaultConfig.rotationSensitivity
 rsInp : Element
 rsInp = 
   dropDown (Signal.message rsMB.address)
-   (List.map (\x -> (toString x, x)) (frange 0 1.01 0.05))
+   (List.map (\x -> (toString x, x)) (frange 0.05 0.51 0.05))
 
 brMB : Signal.Mailbox Float
 brMB = Signal.mailbox defaultConfig.bulletRadius
@@ -373,7 +375,7 @@ brMB = Signal.mailbox defaultConfig.bulletRadius
 brInp : Element
 brInp = 
   dropDown (Signal.message brMB.address)
-   (List.map (\x -> (toString x, x)) (frange 0 50 1))
+   (List.map (\x -> (toString x, x)) (frange 1 50 1))
 
 mbMB : Signal.Mailbox Int
 mbMB = Signal.mailbox defaultConfig.maxBullets
@@ -389,19 +391,30 @@ infoMB = Signal.mailbox False
 infoBtn : Element
 infoBtn = button (Signal.message infoMB.address True) "Info"
 
+elasticityMB : Signal.Mailbox Float
+elasticityMB = Signal.mailbox defaultConfig.collisionElasticity
+
+elasticityInp : Element
+elasticityInp =
+  dropDown (Signal.message elasticityMB.address)
+    (List.map (\x -> (toString x, x)) (frange 0 1.1 0.1))
+
 configSig : Signal Config
 configSig =
-  Signal.map4
-    (\ep rs br mb ->
+  Signal.map5
+    (\ep rs br mb el ->
       { rotationSensitivity = rs
       , enginePower = ep
       , bulletRadius = br
       , bulletMass = 1
-      , maxBullets = mb})
+      , maxBullets = mb
+      , collisionElasticity = el})
     epMB.signal
     rsMB.signal
     brMB.signal
     mbMB.signal
+    elasticityMB.signal
+
 
 main : Signal Element
 main = Signal.map2 view Window.dimensions gameSig

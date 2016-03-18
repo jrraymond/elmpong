@@ -7495,13 +7495,6 @@ Elm.Main.make = function (_elm) {
       var p$ = A2($Vec.add,A2($Vec.scale,dt,v$),b.pos);
       return _U.update(b,{pos: p$,vel: v$,acc: acc});
    });
-   var fire = F2(function (c,p) {
-      return {pos: p.body.pos
-             ,vel: A2($Vec.scale,2 * A2($Basics.max,10,$Vec.magnitude(p.body.vel)),A2($Vec.rotateV,p.dir,$Vec.iV))
-             ,acc: $Vec.zeroV
-             ,mass: c.bulletMass
-             ,radius: c.bulletRadius};
-   });
    var intersects = F2(function (b0,b1) {
       return _U.cmp(Math.pow(b0.pos.x - b1.pos.x,2) + Math.pow(b0.pos.y - b1.pos.y,2),Math.pow(b0.radius + b1.radius,2)) < 0;
    });
@@ -7532,7 +7525,7 @@ Elm.Main.make = function (_elm) {
       });
       return go(_U.list([]));
    }();
-   var collision = F3(function (bodys,old,nu) {
+   var collision = F4(function (elasticity,bodys,old,nu) {
       collision: while (true) {
          var _p4 = bodys;
          if (_p4.ctor === "[]") {
@@ -7543,26 +7536,27 @@ Elm.Main.make = function (_elm) {
                      var n = $Vec.normalize(A2($Vec.sub,_p5.pos,old.pos));
                      var u = A2($Vec.scale,A2($Vec.dot,nu.vel,n),n);
                      var w = A2($Vec.sub,nu.vel,u);
-                     var v$ = A2($Vec.sub,w,u);
+                     var v$ = A2($Vec.scale,elasticity,A2($Vec.sub,w,u));
                      return _U.update(old,{vel: v$});
                   } else {
-                     var _v8 = _p4._1,_v9 = old,_v10 = nu;
-                     bodys = _v8;
-                     old = _v9;
-                     nu = _v10;
+                     var _v8 = elasticity,_v9 = _p4._1,_v10 = old,_v11 = nu;
+                     elasticity = _v8;
+                     bodys = _v9;
+                     old = _v10;
+                     nu = _v11;
                      continue collision;
                   }
             }
       }
    });
-   var bounds = F3(function (box,old,nu) {
+   var bounds = F4(function (elasticity,box,old,nu) {
       return _U.cmp(nu.pos.x,box.x) < 0 || _U.cmp(nu.pos.x,box.x + box.w) > 0 ? _U.update(nu,
-      {pos: old.pos,vel: {x: $Basics.negate(nu.vel.x),y: nu.vel.y}}) : _U.cmp(nu.pos.y,box.y) < 0 || _U.cmp(nu.pos.y,box.y + box.h) > 0 ? _U.update(nu,
-      {pos: old.pos,vel: {x: nu.vel.x,y: $Basics.negate(nu.vel.y)}}) : nu;
+      {pos: old.pos,vel: A2($Vec.scale,elasticity,{x: $Basics.negate(nu.vel.x),y: nu.vel.y})}) : _U.cmp(nu.pos.y,box.y) < 0 || _U.cmp(nu.pos.y,
+      box.y + box.h) > 0 ? _U.update(nu,{pos: old.pos,vel: A2($Vec.scale,elasticity,{x: nu.vel.x,y: $Basics.negate(nu.vel.y)})}) : nu;
    });
-   var updateBullet = F4(function (boundary,bodys,dt,bullet) {
+   var updateBullet = F5(function (elasticity,boundary,bodys,dt,bullet) {
       var gravs = A2($List.map,gravity(bullet),bodys);
-      return A3(bounds,boundary,bullet,A3(updateBody,dt,gravs,bullet));
+      return A4(bounds,elasticity,boundary,bullet,A4(collision,elasticity,bodys,bullet,A3(updateBody,dt,gravs,bullet)));
    });
    var updatePlayer = F8(function (c,boundary,bodys,dt,rot,thrust,fire,p) {
       var bs$ = fire && _U.cmp(p.bullets,0) > 0 ? p.bullets - 1 : p.bullets;
@@ -7571,10 +7565,10 @@ Elm.Main.make = function (_elm) {
       var dir$ = _U.cmp(tmp,2 * $Basics.pi) > 0 ? tmp - 2 * $Basics.pi : _U.cmp(tmp,$Basics.negate(2) * $Basics.pi) < 0 ? tmp + 2 * $Basics.pi : tmp;
       var engine = A2($Vec.rotateV,dir$,A2($Vec.scale,c.enginePower * thrust,{x: 1,y: 0}));
       var b$ = A3(updateBody,dt,A2($List._op["::"],engine,gravs),p.body);
-      var nextbdy = A3(bounds,boundary,p.body,A3(collision,bodys,p.body,b$));
+      var nextbdy = A4(bounds,c.collisionElasticity,boundary,p.body,A4(collision,c.collisionElasticity,bodys,p.body,b$));
       return _U.update(p,{body: nextbdy,dir: dir$,thrust: !_U.eq(thrust,0),bullets: bs$});
    });
-   var defaultConfig = {rotationSensitivity: 0.1,enginePower: 1,bulletRadius: 1,bulletMass: 1,maxBullets: 100};
+   var defaultConfig = {rotationSensitivity: 0.1,enginePower: 10,bulletRadius: 10,bulletMass: 1,maxBullets: 100,collisionElasticity: 0.5};
    var epMB = $Signal.mailbox(defaultConfig.enginePower);
    var epInp = A2($Graphics$Input.dropDown,
    $Signal.message(epMB.address),
@@ -7582,24 +7576,38 @@ Elm.Main.make = function (_elm) {
    var rsMB = $Signal.mailbox(defaultConfig.rotationSensitivity);
    var rsInp = A2($Graphics$Input.dropDown,
    $Signal.message(rsMB.address),
-   A2($List.map,function (x) {    return {ctor: "_Tuple2",_0: $Basics.toString(x),_1: x};},A3(frange,0,1.01,5.0e-2)));
+   A2($List.map,function (x) {    return {ctor: "_Tuple2",_0: $Basics.toString(x),_1: x};},A3(frange,5.0e-2,0.51,5.0e-2)));
    var brMB = $Signal.mailbox(defaultConfig.bulletRadius);
    var brInp = A2($Graphics$Input.dropDown,
    $Signal.message(brMB.address),
-   A2($List.map,function (x) {    return {ctor: "_Tuple2",_0: $Basics.toString(x),_1: x};},A3(frange,0,50,1)));
+   A2($List.map,function (x) {    return {ctor: "_Tuple2",_0: $Basics.toString(x),_1: x};},A3(frange,1,50,1)));
    var mbMB = $Signal.mailbox(defaultConfig.maxBullets);
    var mbInp = A2($Graphics$Input.dropDown,
    $Signal.message(mbMB.address),
    A2($List.map,function (x) {    return {ctor: "_Tuple2",_0: $Basics.toString(x),_1: x};},A2($List._op["::"],1,A3(irange,5,101,5))));
+   var elasticityMB = $Signal.mailbox(defaultConfig.collisionElasticity);
+   var elasticityInp = A2($Graphics$Input.dropDown,
+   $Signal.message(elasticityMB.address),
+   A2($List.map,function (x) {    return {ctor: "_Tuple2",_0: $Basics.toString(x),_1: x};},A3(frange,0,1.1,0.1)));
    var viewConfig = A2($Graphics$Element.flow,
    $Graphics$Element.right,
-   _U.list([toTxt("Engine Power"),epInp,toTxt("Rotation Sensitivity"),rsInp,toTxt("Bullet Radius"),brInp,toTxt("Max Bullets"),mbInp]));
-   var configSig = A5($Signal.map4,
-   F4(function (ep,rs,br,mb) {    return {rotationSensitivity: rs,enginePower: ep,bulletRadius: br,bulletMass: 1,maxBullets: mb};}),
+   _U.list([toTxt("Engine Power")
+           ,epInp
+           ,toTxt("Rotation Sensitivity")
+           ,rsInp
+           ,toTxt("Bullet Radius")
+           ,brInp
+           ,toTxt("Max Bullets")
+           ,mbInp
+           ,toTxt("Collision Elasticity")
+           ,elasticityInp]));
+   var configSig = A6($Signal.map5,
+   F5(function (ep,rs,br,mb,el) {    return {rotationSensitivity: rs,enginePower: ep,bulletRadius: br,bulletMass: 1,maxBullets: mb,collisionElasticity: el};}),
    epMB.signal,
    rsMB.signal,
    brMB.signal,
-   mbMB.signal);
+   mbMB.signal,
+   elasticityMB.signal);
    var defaultControl = {rotation: 0,thrust: 0,fire: false};
    var shiftPlayer = F3(function (x,y,p) {
       var b = p.body;
@@ -7616,6 +7624,20 @@ Elm.Main.make = function (_elm) {
                                        ,{body: {pos: {x: -200,y: 0},vel: $Vec.zeroV,acc: $Vec.zeroV,mass: 5 * Math.pow(10,14),radius: 50}}])
                      ,bullets0: _U.list([])
                      ,bullets1: _U.list([])};
+   var Game = F7(function (a,b,c,d,e,f,g) {    return {paused: a,boundary: b,player0: c,player1: d,planets: e,bullets0: f,bullets1: g};});
+   var Config = F6(function (a,b,c,d,e,f) {
+      return {rotationSensitivity: a,enginePower: b,bulletRadius: c,bulletMass: d,maxBullets: e,collisionElasticity: f};
+   });
+   var Input = F5(function (a,b,c,d,e) {    return {reset: a,pause: b,player0: c,player1: d,dt: e};});
+   var Controls = F3(function (a,b,c) {    return {rotation: a,thrust: b,fire: c};});
+   var Planet = function (a) {    return {body: a};};
+   var Player = F5(function (a,b,c,d,e) {    return {body: a,dir: b,thrust: c,life: d,bullets: e};});
+   var BoundingBox = F4(function (a,b,c,d) {    return {x: a,y: b,w: c,h: d};});
+   var Body = F5(function (a,b,c,d,e) {    return {pos: a,vel: b,acc: c,mass: d,radius: e};});
+   var bulletVel = 250;
+   var fire = F2(function (c,p) {
+      return {pos: p.body.pos,vel: A2($Vec.scale,bulletVel,A2($Vec.rotateV,p.dir,$Vec.iV)),acc: $Vec.zeroV,mass: c.bulletMass,radius: c.bulletRadius};
+   });
    var update = F2(function (_p6,game) {
       var _p7 = _p6;
       var _p13 = _p7._0;
@@ -7633,10 +7655,10 @@ Elm.Main.make = function (_elm) {
                var boundary$ = {x: $Basics.negate(_p13) / 2,y: $Basics.negate(_p11) / 2,w: _p13,h: _p11};
                var p0$ = A8(updatePlayer,_p10,boundary$,pbs,_p12.dt,_p12.player0.rotation,_p12.player0.thrust,_p12.player0.fire,game.player0);
                var p1$ = A8(updatePlayer,_p10,boundary$,pbs,_p12.dt,_p12.player1.rotation,_p12.player1.thrust,_p12.player1.fire,game.player1);
-               var _p8 = A2(calcHits,p0$,A2($List.map,A3(updateBullet,boundary$,pbs,_p12.dt),bullets1$));
+               var _p8 = A2(calcHits,p0$,A2($List.map,A4(updateBullet,_p10.collisionElasticity,boundary$,pbs,_p12.dt),bullets1$));
                var uBs1$ = _p8._0;
                var up0$ = _p8._1;
-               var _p9 = A2(calcHits,p1$,A2($List.map,A3(updateBullet,boundary$,pbs,_p12.dt),bullets0$));
+               var _p9 = A2(calcHits,p1$,A2($List.map,A4(updateBullet,_p10.collisionElasticity,boundary$,pbs,_p12.dt),bullets0$));
                var uBs0$ = _p9._0;
                var up1$ = _p9._1;
                return _U.update(game,{paused: false,boundary: boundary$,player0: up0$,player1: up1$,bullets0: uBs0$,bullets1: uBs1$});
@@ -7650,14 +7672,6 @@ Elm.Main.make = function (_elm) {
    $Window.dimensions,
    configSig,
    input));
-   var Game = F7(function (a,b,c,d,e,f,g) {    return {paused: a,boundary: b,player0: c,player1: d,planets: e,bullets0: f,bullets1: g};});
-   var Config = F5(function (a,b,c,d,e) {    return {rotationSensitivity: a,enginePower: b,bulletRadius: c,bulletMass: d,maxBullets: e};});
-   var Input = F5(function (a,b,c,d,e) {    return {reset: a,pause: b,player0: c,player1: d,dt: e};});
-   var Controls = F3(function (a,b,c) {    return {rotation: a,thrust: b,fire: c};});
-   var Planet = function (a) {    return {body: a};};
-   var Player = F5(function (a,b,c,d,e) {    return {body: a,dir: b,thrust: c,life: d,bullets: e};});
-   var BoundingBox = F4(function (a,b,c,d) {    return {x: a,y: b,w: c,h: d};});
-   var Body = F5(function (a,b,c,d,e) {    return {pos: a,vel: b,acc: c,mass: d,radius: e};});
    var p1Color = A3($Color.rgb,0,250,0);
    var p0Color = A3($Color.rgb,250,0,0);
    var viewGame = F3(function (w,h,g) {
@@ -7698,11 +7712,10 @@ Elm.Main.make = function (_elm) {
       return A2($Graphics$Element.flow,$Graphics$Element.down,_U.list([viewConfig,A3(viewGame,_p17._0,_p17._1,g)]));
    });
    var main = A3($Signal.map2,view,$Window.dimensions,gameSig);
-   var rotationSensitivity = 0.1;
    return _elm.Main.values = {_op: _op
-                             ,rotationSensitivity: rotationSensitivity
                              ,p0Color: p0Color
                              ,p1Color: p1Color
+                             ,bulletVel: bulletVel
                              ,Body: Body
                              ,BoundingBox: BoundingBox
                              ,Player: Player
@@ -7755,6 +7768,8 @@ Elm.Main.make = function (_elm) {
                              ,mbInp: mbInp
                              ,infoMB: infoMB
                              ,infoBtn: infoBtn
+                             ,elasticityMB: elasticityMB
+                             ,elasticityInp: elasticityInp
                              ,configSig: configSig
                              ,main: main};
 };</script></head><body><script type="text/javascript">Elm.fullscreen(Elm.Main)</script></body></html>
